@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Educational Web Proxy</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+        input[type="url"] { width: 70%; padding: 10px; margin-right: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; border: none; background: #007BFF; color: white; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>Web Proxy Gateway</h1>
+    <p>Enter a URL to browse through the proxy server:</p>
+    <form action="/proxy" method="GET">
+        <input type="url" name="url" placeholder="https://example.com" required>
+        <button type="submit">Go</button>
+    </form>
+</body>
+</html>
