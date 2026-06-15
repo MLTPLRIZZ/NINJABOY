@@ -1,0 +1,102 @@
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+const urlModule = require('url');
+
+const PORT = 3000;
+
+// Helper to rewrite links inside the HTML source code
+function rewriteHtmlLinks(html, proxyBaseUrl) {
+    // Regex to find href and src attributes pointing to external sites
+    const regex = /(href|src)=["'](https?:\/\/[^"']+)["']/g;
+    
+    return html.replace(regex, (match, attribute, targetUrl) => {
+        // Route the target URL back through our proxy endpoint
+        const encodedTarget = encodeURIComponent(targetUrl);
+        return `${attribute}="${proxyBaseUrl}?url=${encodedTarget}"`;
+    });
+}
+
+const server = http.createServer((req, res) => {
+    const parsedUrl = urlModule.parse(req.url, true);
+
+    // Serve the homepage HTML
+    if (parsedUrl.pathname === '/' || parsedUrl.pathname === '/index.html') {
+        fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
+            if (err) {
+                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                return res.end('Error loading index.html');
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(data);
+        });
+        return;
+    }
+
+    // Handle the proxy routing and URL rewriting
+    if (parsedUrl.pathname === '/proxy') {
+        const targetUrlStr = parsedUrl.query.url;
+        if (!targetUrlStr) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            return res.end('Missing URL parameter');
+        }
+
+        try {
+            const targetUrl = new URL(targetUrlStr);
+            const options = {
+                hostname: targetUrl.hostname,
+                port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
+                path: targetUrl.pathname + targetUrl.search,
+                method: req.method,
+                headers: { ...req.headers, host: targetUrl.hostname }
+            };
+
+            const requester = targetUrl.protocol === 'https:' ? https : http;
+
+            const proxyReq = requester.request(options, (targetRes) => {
+                const contentType = targetRes.headers['content-type'] || '';
+
+                // Only rewrite URLs if the content returned is HTML
+                if (contentType.includes('text/html')) {
+                    let body = '';
+                    targetRes.on('data', chunk => body += chunk);
+                    targetRes.on('end', () => {
+                        const proxyBaseUrl = `http://localhost:${PORT}/proxy`;
+                        const rewrittenBody = rewriteHtmlLinks(body, proxyBaseUrl);
+                        
+                        res.writeHead(targetRes.statusCode, {
+                            'Content-Type': 'text/html',
+                            'Content-Length': Buffer.byteLength(rewrittenBody)
+                        });
+                        res.end(rewrittenBody);
+                    });
+                } else {
+                    // Pass non-HTML assets (images, CSS, JS) straight through untouched
+                    res.writeHead(targetRes.statusCode, targetRes.headers);
+                    targetRes.pipe(res);
+                }
+            });
+
+            proxyReq.on('error', (err) => {
+                res.writeHead(502, { 'Content-Type': 'text/plain' });
+                res.end(`Proxy connection error: ${err.message}`);
+            });
+
+            req.pipe(proxyReq);
+
+        } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('Invalid URL format');
+        }
+        return;
+    }
+
+    // Default 404 handler
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+});
+
+server.listen(PORT, () => {
+    console.log(`Server listening on http://localhost:${PORT}`);
+});
